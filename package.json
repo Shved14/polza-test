@@ -2,34 +2,45 @@
   "name": "email-outreach-personalization",
   "version": "1.0.0",
   "description": "Tool for automatic company personalization for cold email outreach",
+  "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
+    "dev": "tsx src/index.ts",
     "clean": "rimraf dist"
   },
   "keywords": [
     "email",
     "outreach",
     "personalization",
-    "openai",
+    "gemini",
     "web-scraping"
   ],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
+    "@google/generative-ai": "^0.21.0",
     "axios": "^1.6.0",
     "cheerio": "^1.0.0-rc.12",
+    "cli-progress": "^3.12.0",
     "csv-parser": "^3.0.0",
     "csv-writer": "^1.6.0",
     "dotenv": "^16.3.1",
-    "openai": "^4.20.0"
+    "ipaddr.js": "^2.1.0",
+    "p-limit": "^5.0.0",
+    "yargs": "^17.7.2",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@types/cli-progress": "^3.11.5",
     "@types/node": "^20.10.0",
+    "@types/yargs": "^17.0.32",
     "rimraf": "^5.0.5",
-    "ts-node": "^10.9.2",
+    "tsx": "^4.7.0",
     "typescript": "^5.3.3"
   }
 }

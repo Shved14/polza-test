@@ -1,39 +1,41 @@
 import * as cheerio from 'cheerio';
+import { config } from '../config/config.js';
 
 export class TextCleaningService {
-  private static readonly MAX_TEXT_LENGTH = 8000;
   private static readonly WORD_LIMIT = 40;
 
   static cleanHTML(html: string): string {
     const $ = cheerio.load(html);
 
-    // Remove script, style, noscript, iframe, svg tags
-    $('script, style, noscript, iframe, svg').remove();
+    // Remove script, style, noscript tags
+    $('script').remove();
+    $('style').remove();
+    $('noscript').remove();
 
-    // Remove comments
-    $('*').contents().each(function () {
-      if (this.type === 'comment') {
-        $(this).remove();
-      }
-    });
-
-    // Get text from body, fallback to full document
-    let text = $('body').text() || $.text();
-
-    // Clean up whitespace
-    text = text
+    // Get text from body
+    const text = $('body')
+      .text()
       .replace(/\s+/g, ' ')
-      .replace(/\n\s*\n/g, '\n')
       .trim();
 
     return text;
   }
 
-  static truncateText(text: string, maxLength: number = this.MAX_TEXT_LENGTH): string {
-    if (text.length <= maxLength) {
+  static truncateText(text: string, maxLength?: number): string {
+    const limit = maxLength || config.scraping.maxTextLength;
+
+    if (text.length <= limit) {
       return text;
     }
-    return text.substring(0, maxLength);
+
+    const truncated = text.substring(0, limit);
+    const lastSpace = truncated.lastIndexOf(' ');
+
+    if (lastSpace > limit * 0.8) {
+      return truncated.substring(0, lastSpace);
+    }
+
+    return truncated;
   }
 
   static countWords(text: string): number {
@@ -49,17 +51,23 @@ export class TextCleaningService {
     const parts: string[] = [];
 
     if (mainPage && mainPage.length > 0) {
-      parts.push(`Главная страница:\n${mainPage}`);
+      parts.push(`Main page:\n${mainPage}`);
     }
 
     if (aboutPage && aboutPage.length > 0) {
-      parts.push(`О компании:\n${aboutPage}`);
+      parts.push(`About:\n${aboutPage}`);
     }
 
     if (newsPage && newsPage.length > 0) {
-      parts.push(`Новости:\n${newsPage}`);
+      parts.push(`News:\n${newsPage}`);
     }
 
     return parts.join('\n\n');
+  }
+
+  static minimizeForAI(text: string): string {
+    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 20);
+    const topSentences = sentences.slice(0, 5);
+    return topSentences.join('. ').trim();
   }
 }

@@ -14,13 +14,24 @@ export interface ScrapedData {
   newsPageText: string;
 }
 
-export interface OpenAIConfig {
+export interface LLMConfig {
   apiKey: string;
   model: string;
+  maxTokens: number;
+  temperature: number;
+}
+
+export interface ScrapingConfig {
+  timeout: number;
+  maxRetries: number;
+  retryDelay: number;
+  maxTextLength: number;
+  concurrency: number;
 }
 
 export interface AppConfig {
-  openai: OpenAIConfig;
+  llm: LLMConfig;
+  scraping: ScrapingConfig;
 }
 
 export interface ScrapingResult {
@@ -35,8 +46,6 @@ export interface PersonalizationResult {
   error?: string;
 }
 
-export interface ProcessingError {
-  company: string;
-  website: string;
-  error: string;
+export interface LLMProvider {
+  generatePersonalization(prompt: string): Promise<PersonalizationResult>;
 }
