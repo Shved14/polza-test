@@ -15,7 +15,47 @@ import { CompanyDataWithPersonalization } from './types/index.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const FALLBACK_PERSONALIZATION = 'Не удалось найти достоверный факт для персонализации.';
+
 let isShuttingDown = false;
+
+function isSuccessfulPersonalization(text: string): boolean {
+  if (!text) return false;
+  if (text === FALLBACK_PERSONALIZATION) return false;
+  if (text.startsWith('Ошибка')) return false;
+  if (text.startsWith('Недостаточно информации')) return false;
+  if (text.startsWith('Не удалось найти')) return false;
+  return true;
+}
+
+function formatScrapingError(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return 'Ошибка: не удалось открыть сайт (неизвестная ошибка).';
+  }
+
+  const message = error.message;
+
+  if (message.includes('403')) {
+    return 'Ошибка: сайт вернул 403 Forbidden (доступ запрещён).';
+  }
+  if (message.includes('404')) {
+    return 'Ошибка: сайт вернул 404 Not Found (страница не найдена).';
+  }
+  if (message.includes('timeout') || message.includes('ETIMEDOUT') || message.includes('ECONNABORTED')) {
+    return 'Ошибка: таймаут при открытии сайта.';
+  }
+  if (message.includes('ENOTFOUND')) {
+    return 'Ошибка: домен не найден (DNS).';
+  }
+  if (message.includes('ECONNREFUSED')) {
+    return 'Ошибка: соединение с сайтом отклонено.';
+  }
+  if (message.includes('certificate') || message.includes('SSL') || message.includes('TLS')) {
+    return 'Ошибка: проблема с SSL-сертификатом сайта.';
+  }
+
+  return `Ошибка: не удалось открыть сайт (${message}).`;
+}
 
 function setupGracefulShutdown(): void {
   const shutdown = async (signal: string): Promise<void> => {
@@ -34,36 +74,98 @@ async function processCompany(
   company: CompanyDataWithPersonalization,
   llmProvider: GeminiProvider
 ): Promise<CompanyDataWithPersonalization> {
-  const scrapingResult = await WebScrapingService.scrapeWebsite(company.website);
+  let scrapingResult;
+
+  Logger.stage(company.company, 'START', company.website);
+
+  try {
+    scrapingResult = await WebScrapingService.scrapeWebsite(company.website);
+  } catch (error) {
+    company.personalization = formatScrapingError(error);
+    Logger.stage(company.company, 'SCRAPE', `ошибка — ${company.personalization}`);
+    return company;
+  }
 
   if (!scrapingResult.success || !scrapingResult.data) {
-    throw new Error(`Scraping failed for ${company.company}: ${scrapingResult.error}`);
+    const scrapeError = scrapingResult.error || 'не удалось получить данные с сайта.';
+    company.personalization = scrapeError.startsWith('Ошибка') || scrapeError.startsWith('Сайт')
+      ? scrapeError
+      : `Ошибка: ${scrapeError}`;
+    Logger.stage(company.company, 'SCRAPE', `неуспех — ${company.personalization}`);
+    return company;
   }
+
+  const mainLen = scrapingResult.data.mainPageText?.length || 0;
+  const aboutLen = scrapingResult.data.aboutPageText?.length || 0;
+  Logger.stage(
+    company.company,
+    'SCRAPE',
+    `ok — main=${mainLen} символов, about=${aboutLen} символов`
+  );
 
   const combinedText = TextCleaningService.combineTexts(
     scrapingResult.data.mainPageText,
-    scrapingResult.data.aboutPageText,
-    scrapingResult.data.newsPageText
+    scrapingResult.data.aboutPageText
   );
 
   if (!combinedText || combinedText.trim().length === 0) {
-    throw new Error(`No text content found for ${company.company}`);
+    company.personalization = 'Недостаточно информации: с сайта не удалось извлечь текст.';
+    Logger.stage(company.company, 'TEXT', company.personalization);
+    return company;
   }
 
-  const minimizedText = TextCleaningService.minimizeForAI(combinedText);
+  if (combinedText.trim().length < 50) {
+    company.personalization = 'Недостаточно информации: на сайте слишком мало полезного текста.';
+    Logger.stage(company.company, 'TEXT', `${company.personalization} (${combinedText.length} симв.)`);
+    return company;
+  }
 
-  const prompt = `Напиши персонализацию для email. Используй только факты из текста. 1-2 предложения. Максимум 40 слов. На русском языке. Только текст персонализации.
+  const textForLlm = TextCleaningService.truncateText(combinedText, 4000);
+  Logger.stageDebug(
+    company.company,
+    'TEXT',
+    `в LLM ${textForLlm.length} символов, preview: ${textForLlm.slice(0, 120).replace(/\s+/g, ' ')}...`
+  );
 
-Текст:
-${minimizedText}`;
+  const prompt = `Ты пишешь персонализацию для холодного B2B email.
 
+Используй только факты из текста сайта.
+
+Ответ должен быть:
+
+- на русском;
+- одно предложение;
+- до 25 слов;
+- начинаться с "Увидел, что", "Заметил, что" или "Обратил внимание, что".
+
+Если фактов недостаточно, ответь:
+
+Не удалось найти достоверный факт для персонализации.
+
+Верни только текст. Без JSON. Без пояснений.
+
+Текст сайта:
+${textForLlm}`;
+
+  Logger.stage(company.company, 'LLM', `запрос, модель=${config.llm.model}`);
   const llmResult = await llmProvider.generatePersonalization(prompt);
 
   if (!llmResult.success) {
-    throw new Error(`LLM generation failed for ${company.company}: ${llmResult.error}`);
+    const llmError = llmResult.error || 'неизвестная ошибка LLM';
+    company.personalization = llmError.startsWith('Ошибка')
+      ? llmError
+      : `Ошибка генерации: ${llmError}`;
+    Logger.stage(company.company, 'RESULT', company.personalization);
+    return company;
   }
 
-  company.personalization = llmResult.personalization || 'Unable to find reliable information for personalization.';
+  company.personalization = llmResult.personalization || FALLBACK_PERSONALIZATION;
+
+  if (isSuccessfulPersonalization(company.personalization)) {
+    Logger.stage(company.company, 'RESULT', `ok — ${company.personalization}`);
+  } else {
+    Logger.stage(company.company, 'RESULT', company.personalization);
+  }
 
   return company;
 }
@@ -99,6 +201,11 @@ async function main(): Promise<void> {
 
     Logger.info(`Found ${companies.length} companies to process`);
     Logger.info(`Concurrency: ${config.scraping.concurrency}`);
+    Logger.info(`Gemini model: ${config.llm.model}`);
+    Logger.info(`Gemini maxTokens: ${config.llm.maxTokens}, temperature: ${config.llm.temperature}`);
+    Logger.warn(
+      'gemini-flash-latest тратит токены на thinking — LLM_MAX_TOKENS лучше >= 1024, иначе ответы обрезаются.'
+    );
     Logger.logSeparator();
 
     const progressBar = new cliProgress.SingleBar({
@@ -127,7 +234,10 @@ async function main(): Promise<void> {
           progressBar.increment();
           return processed;
         } catch (error) {
-          throw error;
+          companyData.personalization = formatScrapingError(error);
+          Logger.warn(`${company.company}: ${companyData.personalization}`);
+          progressBar.increment();
+          return companyData;
         }
       })
     );
@@ -143,8 +253,11 @@ async function main(): Promise<void> {
 
     Logger.logSeparator();
     Logger.info(`Processing complete. Results saved to: ${outputFile}`);
-    const successful = results.filter(r => r.personalization && !r.personalization.startsWith('Unable to find')).length;
+    const successful = results.filter(r => isSuccessfulPersonalization(r.personalization)).length;
+    const errors = results.filter(r => r.personalization.startsWith('Ошибка')).length;
+    const insufficient = results.length - successful - errors;
     Logger.info(`Successfully processed: ${successful}/${results.length}`);
+    Logger.info(`Errors: ${errors}, insufficient info: ${insufficient}`);
   } catch (error) {
     Logger.error(`Critical error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     process.exit(1);

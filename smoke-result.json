@@ -1,0 +1,17 @@
+{
+  "bothFail": true,
+  "results": [
+    {
+      "url": "https://iskroline.ru",
+      "fail": true,
+      "personalization": null,
+      "error": "Gemini rate limit exceeded"
+    },
+    {
+      "url": "https://hnc.su",
+      "fail": true,
+      "personalization": null,
+      "error": "Gemini rate limit exceeded"
+    }
+  ]
+}

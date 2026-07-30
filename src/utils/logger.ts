@@ -57,6 +57,15 @@ export class Logger {
     this.log(LogLevel.ERROR, 'ERROR', message);
   }
 
+  /** Pipeline step for a company: SCRAPE | TEXT | LLM | RESULT */
+  static stage(company: string, step: string, message: string): void {
+    this.info(`[${company}] ${step}: ${message}`);
+  }
+
+  static stageDebug(company: string, step: string, message: string): void {
+    this.debug(`[${company}] ${step}: ${message}`);
+  }
+
   static logProgress(): void {
     this.info(`Processing ${this.current}/${this.total}`);
   }
@@ -69,8 +78,8 @@ export class Logger {
     this.debug('Extracting text...');
   }
 
-  static logSendingToOpenAI(): void {
-    this.debug('Sending to OpenAI...');
+  static logSendingToGemini(): void {
+    this.debug('Sending to Gemini...');
   }
 
   static logPersonalizationReceived(): void {

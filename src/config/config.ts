@@ -6,9 +6,9 @@ dotenv.config();
 export const config: AppConfig = {
   llm: {
     apiKey: process.env.GEMINI_API_KEY || '',
-    model: process.env.MODEL || 'gemini-flash-latest',
-    maxTokens: parseInt(process.env.LLM_MAX_TOKENS || '150', 10),
-    temperature: parseFloat(process.env.LLM_TEMPERATURE || '0.7'),
+    model: process.env.MODEL || 'gemini-2.5-flash-lite',
+    maxTokens: parseInt(process.env.LLM_MAX_TOKENS || '1024', 10),
+    temperature: parseFloat(process.env.LLM_TEMPERATURE || '0.3'),
   },
   scraping: {
     timeout: parseInt(process.env.SCRAPING_TIMEOUT || '10000', 10),
